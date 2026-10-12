@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Quiz Studio"
+description = "A quiz creation and participation website with static and competition modes, configurable timers, six selectable visual themes, join-by-code participation, and live competition scoring."
+version = "1.0.0"
+id = "artifacts/quiz-studio"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20434
+
+[services.development]
+run = "pnpm --filter @workspace/quiz-studio run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/quiz-studio", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/quiz-studio/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20434"
+BASE_PATH = "/"

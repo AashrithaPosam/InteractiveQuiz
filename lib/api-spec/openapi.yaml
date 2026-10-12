@@ -3,20 +3,23 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Quiz creation, participation, timers, and leaderboards
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: quizzes
+    description: Quiz creation and configuration
+  - name: attempts
+    description: Participant quiz sessions
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +27,492 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /quizzes:
+    get:
+      operationId: listQuizzes
+      tags: [quizzes]
+      summary: List recently published quizzes
+      responses:
+        "200":
+          description: Recently published quizzes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QuizSummary"
+    post:
+      operationId: createQuiz
+      tags: [quizzes]
+      summary: Create a quiz draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuizInput"
+      responses:
+        "201":
+          description: Draft quiz and creator access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedQuiz"
+  /quizzes/{code}:
+    get:
+      operationId: getQuiz
+      tags: [quizzes]
+      summary: Get participant-safe quiz details by join code
+      parameters:
+        - $ref: "#/components/parameters/QuizCode"
+      responses:
+        "200":
+          description: Quiz details without correct answers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizPublic"
+        "404":
+          description: Quiz not found
+  /quizzes/{code}/editor:
+    get:
+      operationId: getQuizEditor
+      tags: [quizzes]
+      summary: Get creator quiz details
+      parameters:
+        - $ref: "#/components/parameters/QuizCode"
+        - $ref: "#/components/parameters/CreatorToken"
+      responses:
+        "200":
+          description: Full quiz details for editing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quiz"
+        "403":
+          description: Creator token is invalid
+    patch:
+      operationId: updateQuiz
+      tags: [quizzes]
+      summary: Update a quiz before it is active
+      parameters:
+        - $ref: "#/components/parameters/QuizCode"
+        - $ref: "#/components/parameters/CreatorToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuizInput"
+      responses:
+        "200":
+          description: Updated quiz
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quiz"
+        "409":
+          description: Quiz cannot be changed in its current state
+  /quizzes/{code}/publish:
+    post:
+      operationId: publishQuiz
+      tags: [quizzes]
+      summary: Publish a draft quiz
+      parameters:
+        - $ref: "#/components/parameters/QuizCode"
+        - $ref: "#/components/parameters/CreatorToken"
+      responses:
+        "200":
+          description: Published quiz
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quiz"
+        "400":
+          description: Quiz configuration is invalid
+  /quizzes/{code}/start:
+    post:
+      operationId: startCompetition
+      tags: [quizzes]
+      summary: Start a synchronized competition
+      parameters:
+        - $ref: "#/components/parameters/QuizCode"
+        - $ref: "#/components/parameters/CreatorToken"
+      responses:
+        "200":
+          description: Started competition and server clock
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompetitionClock"
+        "409":
+          description: Competition cannot be started
+  /quizzes/{code}/stop:
+    post:
+      operationId: stopCompetition
+      tags: [quizzes]
+      summary: Safely stop and reset an active competition
+      parameters:
+        - $ref: "#/components/parameters/QuizCode"
+        - $ref: "#/components/parameters/CreatorToken"
+      responses:
+        "200":
+          description: Competition reset and ready for editing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizSummary"
+        "409":
+          description: Competition is not active
+  /quizzes/{code}/leaderboard:
+    get:
+      operationId: getLeaderboard
+      tags: [quizzes]
+      summary: Get competition standings
+      parameters:
+        - $ref: "#/components/parameters/QuizCode"
+      responses:
+        "200":
+          description: Current leaderboard
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+  /quizzes/{code}/attempts:
+    post:
+      operationId: startAttempt
+      tags: [attempts]
+      summary: Join a quiz and start a participant attempt
+      parameters:
+        - $ref: "#/components/parameters/QuizCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttemptInput"
+      responses:
+        "201":
+          description: Participant attempt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attempt"
+        "409":
+          description: Quiz is not accepting participants
+  /attempts/{attemptId}:
+    get:
+      operationId: getAttempt
+      tags: [attempts]
+      summary: Get current attempt state and authoritative server time
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current attempt state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attempt"
+        "404":
+          description: Attempt not found
+  /attempts/{attemptId}/answers:
+    post:
+      operationId: submitAnswer
+      tags: [attempts]
+      summary: Save an answer before its deadline
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnswerInput"
+      responses:
+        "200":
+          description: Saved answer and updated attempt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attempt"
+        "409":
+          description: Answer deadline passed
+  /attempts/{attemptId}/navigate:
+    post:
+      operationId: navigateAttempt
+      tags: [attempts]
+      summary: Move to a question in a static quiz with a total timer
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NavigationInput"
+      responses:
+        "200":
+          description: Updated attempt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attempt"
+        "409":
+          description: Navigation is not allowed
+  /attempts/{attemptId}/submit:
+    post:
+      operationId: finishAttempt
+      tags: [attempts]
+      summary: Submit an attempt or retrieve its final result
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Final result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attempt"
 components:
+  parameters:
+    QuizCode:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
+    CreatorToken:
+      name: X-Creator-Token
+      in: header
+      required: true
+      schema:
+        type: string
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
-      required:
-        - status
-
+      required: [status]
+    QuizQuestionInput:
+      type: object
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+        options:
+          type: array
+          items:
+            type: string
+          minItems: 2
+        correctOption:
+          type: integer
+          minimum: 0
+        timeLimitSeconds:
+          type: integer
+          minimum: 1
+      required: [prompt, options, correctOption]
+    QuizInput:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        mode:
+          type: string
+          enum: [static, competition]
+        timerMode:
+          type: string
+          enum: [none, per_question, total]
+        totalDurationMinutes:
+          type: ["integer", "null"]
+          minimum: 1
+        theme:
+          type: string
+          enum: [playful, modern, tech, minimal, professional, gamified]
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuizQuestionInput"
+          minItems: 1
+      required: [title, description, mode, timerMode, totalDurationMinutes, theme, questions]
+    QuizQuestion:
+      allOf:
+        - $ref: "#/components/schemas/QuizQuestionInput"
+        - type: object
+          properties:
+            id:
+              type: string
+          required: [id]
+    QuizSummary:
+      type: object
+      properties:
+        code:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string
+          enum: [static, competition]
+        timerMode:
+          type: string
+          enum: [none, per_question, total]
+        totalDurationMinutes:
+          type: ["integer", "null"]
+        theme:
+          type: string
+          enum: [playful, modern, tech, minimal, professional, gamified]
+        questionCount:
+          type: integer
+        status:
+          type: string
+          enum: [draft, published, active]
+      required: [code, title, description, mode, timerMode, totalDurationMinutes, theme, questionCount, status]
+    Quiz:
+      allOf:
+        - $ref: "#/components/schemas/QuizSummary"
+        - type: object
+          properties:
+            questions:
+              type: array
+              items:
+                $ref: "#/components/schemas/QuizQuestion"
+          required: [questions]
+    PublicQuestion:
+      type: object
+      properties:
+        id:
+          type: string
+        prompt:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        timeLimitSeconds:
+          type: ["integer", "null"]
+      required: [id, prompt, options, timeLimitSeconds]
+    QuizPublic:
+      allOf:
+        - $ref: "#/components/schemas/QuizSummary"
+        - type: object
+          properties:
+            questions:
+              type: array
+              items:
+                $ref: "#/components/schemas/PublicQuestion"
+            competitionStartedAt:
+              type: ["integer", "null"]
+          required: [questions, competitionStartedAt]
+    CreatedQuiz:
+      type: object
+      properties:
+        quiz:
+          $ref: "#/components/schemas/Quiz"
+        creatorToken:
+          type: string
+      required: [quiz, creatorToken]
+    AttemptInput:
+      type: object
+      properties:
+        participantName:
+          type: string
+          minLength: 1
+      required: [participantName]
+    AnswerInput:
+      type: object
+      properties:
+        questionIndex:
+          type: integer
+          minimum: 0
+        selectedOption:
+          type: integer
+          minimum: 0
+      required: [questionIndex, selectedOption]
+    NavigationInput:
+      type: object
+      properties:
+        questionIndex:
+          type: integer
+          minimum: 0
+      required: [questionIndex]
+    Answer:
+      type: object
+      properties:
+        questionIndex:
+          type: integer
+        selectedOption:
+          type: integer
+      required: [questionIndex, selectedOption]
+    Attempt:
+      type: object
+      properties:
+        id:
+          type: string
+        quiz:
+          $ref: "#/components/schemas/QuizPublic"
+        participantName:
+          type: string
+        answers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Answer"
+        currentQuestionIndex:
+          type: integer
+        questionDeadline:
+          type: ["integer", "null"]
+        totalDeadline:
+          type: ["integer", "null"]
+        serverNow:
+          type: integer
+        status:
+          type: string
+          enum: [in_progress, submitted]
+        score:
+          type: ["integer", "null"]
+        leaderboard:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeaderboardEntry"
+      required: [id, quiz, participantName, answers, currentQuestionIndex, questionDeadline, totalDeadline, serverNow, status, score, leaderboard]
+    CompetitionClock:
+      type: object
+      properties:
+        startedAt:
+          type: integer
+        serverNow:
+          type: integer
+      required: [startedAt, serverNow]
+    LeaderboardEntry:
+      type: object
+      properties:
+        participantName:
+          type: string
+        score:
+          type: integer
+        completedAt:
+          type: ["integer", "null"]
+      required: [participantName, score, completedAt]
